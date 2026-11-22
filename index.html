@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>ลงเวลา ร้านเจ๊จู</title>
+<script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+<style>
+  :root { --red:#d62828; --green:#2a9d55; --ink:#222; --soft:#f4f4f4; --line:#ddd; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: -apple-system, "Sukhumvit Set", "Noto Sans Thai", sans-serif; color:var(--ink); background:#fff8f0; }
+  header { background:var(--red); color:#fff; padding:16px; text-align:center; }
+  header h1 { margin:0; font-size:20px; }
+  header .who { margin-top:4px; font-size:15px; opacity:.95; }
+  main { padding:16px; max-width:480px; margin:0 auto; }
+  .card { background:#fff; border-radius:14px; padding:16px; margin-bottom:14px; box-shadow:0 1px 4px rgba(0,0,0,.08); }
+  .hide { display:none !important; }
+  button { font:inherit; border:0; border-radius:12px; padding:14px; width:100%; font-size:18px; font-weight:600; cursor:pointer; }
+  button:disabled { opacity:.45; }
+  .big { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  .big button { padding:26px 8px; font-size:20px; }
+  .in { background:var(--green); color:#fff; }
+  .out { background:var(--red); color:#fff; }
+  .sec { background:var(--soft); color:var(--ink); border:1px solid var(--line); }
+  .go { background:#1d6fdc; color:#fff; margin-top:6px; }
+  select { width:100%; font:inherit; font-size:17px; padding:12px; border-radius:10px; border:1px solid var(--line); background:#fff; }
+  label { display:block; font-weight:600; margin:12px 0 6px; }
+  .muted { color:#666; font-size:14px; }
+  .ok { color:var(--green); } .warn { color:#c77800; } .bad { color:var(--red); }
+  #preview { width:100%; border-radius:10px; margin-top:8px; }
+  .done { text-align:center; }
+  .done .time { font-size:56px; font-weight:800; margin:6px 0; }
+  .row2 { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:12px; }
+  .today li { margin:4px 0; }
+  .spin { text-align:center; padding:30px 0; }
+</style>
+</head>
+<body>
+<header>
+  <h1>ลงเวลาทำงาน ร้านเจ๊จู</h1>
+  <div class="who" id="who"></div>
+</header>
+<main>
+  <div class="card spin" id="loading">กำลังโหลด...</div>
+  <div class="card hide" id="error"></div>
+
+  <!-- ลงทะเบียนครั้งแรก -->
+  <div class="card hide" id="regBox">
+    <b>ลงทะเบียนครั้งแรก</b>
+    <p class="muted">เลือกชื่อเล่นของตัวเอง ทำครั้งเดียว เลือกแล้วเปลี่ยนเองไม่ได้ ถ้าเลือกผิดให้แจ้งเจ๊</p>
+    <select id="regName"></select>
+    <button class="go" id="regBtn">ยืนยัน นี่คือชื่อของฉัน</button>
+  </div>
+
+  <!-- หน้าหลัก -->
+  <div id="mainBox" class="hide">
+    <div class="card">
+      <div class="big">
+        <button class="in" id="btnIn">ลงเวลา<br>เข้างาน</button>
+        <button class="out" id="btnOut">ลงเวลา<br>ออกงาน</button>
+      </div>
+      <ul class="today muted" id="todayList"></ul>
+    </div>
+  </div>
+
+  <!-- ขั้นตอนลงเวลา -->
+  <div id="stepBox" class="hide">
+    <div class="card">
+      <b id="stepTitle"></b>
+      <label>1. ตำแหน่ง</label>
+      <div id="gpsStatus" class="muted">กำลังหาตำแหน่ง...</div>
+      <label>2. สาขา</label>
+      <select id="branch"></select>
+      <label>3. ถ่ายรูปตัวเองที่ร้าน</label>
+      <input type="file" id="photo" accept="image/*" capture="user" class="hide">
+      <button class="sec" id="photoBtn">📷 เปิดกล้อง</button>
+      <img id="preview" class="hide" alt="">
+      <button class="go" id="sendBtn" disabled>บันทึกเวลา</button>
+      <button class="sec" id="cancelBtn" style="margin-top:8px">ยกเลิก</button>
+    </div>
+  </div>
+
+  <!-- ถามยืนยันเมื่อนอกรัศมี / GPS ไม่ชัด -->
+  <div class="card hide" id="confirmBox">
+    <div id="confirmMsg"></div>
+    <div class="row2">
+      <button class="sec" id="retryBtn">ลองใหม่</button>
+      <button class="out" id="forceBtn">ลงเวลาเลย</button>
+    </div>
+  </div>
+
+  <!-- สำเร็จ -->
+  <div class="card done hide" id="doneBox">
+    <div id="doneType"></div>
+    <div class="time" id="doneTime"></div>
+    <div id="doneInfo" class="muted"></div>
+    <div id="doneFlags" class="warn"></div>
+    <button class="sec" id="closeBtn" style="margin-top:16px">ปิด</button>
+  </div>
+</main>
+
+<script>
+// ===== ค่าที่ต้องใส่ (ลูซี่เติมให้) =====
+const LIFF_ID = '2012745769-tDbhTx2R';
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbwI0pvDcEvNOINQqjuMFuqW7DjmueQPfFcn0udlsT3Ay-7bvHKtGhdonPaWtoSixujQpw/exec';
+// ======================================
+
+const $ = id => document.getElementById(id);
+const show = (...ids) => ids.forEach(i => $(i).classList.remove('hide'));
+const hide = (...ids) => ids.forEach(i => $(i).classList.add('hide'));
+let state = { branches: [], type: '', pos: null, photo: null, sending: false };
+
+async function api(action, data) {
+  const idToken = liff.getIDToken();
+  const res = await fetch(GAS_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify(Object.assign({ action, idToken }, data || {}))
+  });
+  const out = await res.json();
+  if (!out.ok) throw new Error(out.error || 'เกิดข้อผิดพลาด');
+  return out;
+}
+
+function fail(msg) {
+  hide('loading');
+  $('error').innerHTML = '<b class="bad">ทำรายการไม่สำเร็จ</b><p>' + msg + '</p>';
+  show('error');
+}
+
+async function start() {
+  try {
+    await liff.init({ liffId: LIFF_ID });
+    if (!liff.isLoggedIn()) { liff.login(); return; }
+    const d = await api('init');
+    state.branches = d.branches;
+    hide('loading');
+    if (d.registered) showMain(d);
+    else {
+      $('who').textContent = d.lineName;
+      $('regName').innerHTML = '<option value="">-- เลือกชื่อ --</option>' +
+        d.names.map(n => `<option>${n}</option>`).join('');
+      show('regBox');
+    }
+  } catch (e) { fail(e.message); }
+}
+
+function showMain(d) {
+  $('who').textContent = d.nickname + ' · ' + d.code;
+  const list = d.today || [];
+  $('todayList').innerHTML = list.length
+    ? '<li><b>วันนี้ลงไปแล้ว</b></li>' + list.map(s => `<li>${s.type} ${s.time} น. · ${s.branch}</li>`).join('')
+    : '';
+  hide('regBox', 'stepBox', 'confirmBox', 'doneBox');
+  show('mainBox');
+}
+
+$('regBtn').onclick = async () => {
+  const n = $('regName').value;
+  if (!n) return alert('กรุณาเลือกชื่อ');
+  $('regBtn').disabled = true;
+  try { const d = await api('register', { nickname: n }); showMain(d); }
+  catch (e) { fail(e.message); }
+  $('regBtn').disabled = false;
+};
+
+// ----- เริ่มลงเวลา -----
+$('btnIn').onclick = () => begin('เข้า');
+$('btnOut').onclick = () => begin('ออก');
+
+function begin(type) {
+  state.type = type; state.photo = null; state.pos = null;
+  $('stepTitle').textContent = type === 'เข้า' ? 'ลงเวลาเข้างาน' : 'ลงเวลาออกงาน';
+  $('branch').innerHTML = state.branches.map(b => `<option>${b.name}</option>`).join('');
+  $('preview').src = ''; hide('preview', 'mainBox', 'confirmBox');
+  $('photoBtn').textContent = '📷 เปิดกล้อง';
+  show('stepBox');
+  getGps();
+  check();
+}
+
+function getGps() {
+  state.pos = null; check();
+  $('gpsStatus').className = 'muted';
+  $('gpsStatus').textContent = 'กำลังหาตำแหน่ง...';
+  if (!navigator.geolocation) { $('gpsStatus').textContent = 'มือถือนี้ใช้ GPS ไม่ได้'; return; }
+  navigator.geolocation.getCurrentPosition(p => {
+    state.pos = { lat: p.coords.latitude, lng: p.coords.longitude, acc: p.coords.accuracy };
+    // เลือกสาขาที่ใกล้ที่สุดให้อัตโนมัติ
+    let best = null;
+    state.branches.forEach(b => {
+      const d = dist(state.pos.lat, state.pos.lng, b.lat, b.lng);
+      if (!best || d < best.d) best = { b, d };
+    });
+    if (best) $('branch').value = best.b.name;
+    updateGpsText();
+    check();
+  }, err => {
+    $('gpsStatus').className = 'bad';
+    $('gpsStatus').textContent = err.code === 1
+      ? 'ไม่ได้อนุญาตให้ใช้ตำแหน่ง ไปที่ตั้งค่ามือถือ > LINE > ตำแหน่ง แล้วเปิดเป็น "อนุญาต"'
+      : 'หาตำแหน่งไม่เจอ เปิด GPS แล้วกดลองใหม่';
+  }, { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 });
+}
+
+function updateGpsText() {
+  if (!state.pos) return;
+  const b = state.branches.find(x => x.name === $('branch').value);
+  const d = Math.round(dist(state.pos.lat, state.pos.lng, b.lat, b.lng));
+  const inside = d <= b.radius;
+  $('gpsStatus').className = inside ? 'ok' : 'warn';
+  $('gpsStatus').textContent = (inside ? '✅ อยู่ที่ร้าน' : '⚠️ อยู่ห่างร้าน') + ` ${d} เมตร (GPS ±${Math.round(state.pos.acc)} ม.)`;
+}
+$('branch').onchange = updateGpsText;
+
+// ----- รูป -----
+$('photoBtn').onclick = () => $('photo').click();
+$('photo').onchange = async e => {
+  const f = e.target.files[0];
+  if (!f) return;
+  state.photo = await shrink(f, 1024, 0.7);
+  $('preview').src = state.photo; show('preview');
+  $('photoBtn').textContent = '📷 ถ่ายใหม่';
+  e.target.value = '';
+  check();
+};
+
+function shrink(file, max, q) {
+  return new Promise((ok, no) => {
+    const img = new Image();
+    img.onload = () => {
+      const s = Math.min(1, max / Math.max(img.width, img.height));
+      const c = document.createElement('canvas');
+      c.width = Math.round(img.width * s); c.height = Math.round(img.height * s);
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(img.src);
+      ok(c.toDataURL('image/jpeg', q));
+    };
+    img.onerror = no;
+    img.src = URL.createObjectURL(file);
+  });
+}
+
+function check() { $('sendBtn').disabled = !(state.pos && state.photo) || state.sending; }
+
+// ----- ส่ง -----
+$('sendBtn').onclick = () => send(false);
+$('forceBtn').onclick = () => send(true);
+$('retryBtn').onclick = () => { hide('confirmBox'); show('stepBox'); getGps(); };
+$('cancelBtn').onclick = () => { hide('stepBox'); show('mainBox'); };
+$('closeBtn').onclick = () => { if (liff.isInClient()) liff.closeWindow(); else location.reload(); };
+
+async function send(force) {
+  state.sending = true; check();
+  $('sendBtn').textContent = 'กำลังบันทึก...';
+  $('forceBtn').disabled = true;
+  try {
+    const d = await api('clock', {
+      type: state.type, branch: $('branch').value,
+      lat: state.pos.lat, lng: state.pos.lng, accuracy: state.pos.acc,
+      photo: state.photo, force
+    });
+    if (d.needConfirm) {
+      $('confirmMsg').innerHTML = d.reason === 'gps'
+        ? `<b class="warn">สัญญาณ GPS ไม่ชัด</b><p>ตำแหน่งคลาดได้ถึง ±${d.accuracy} เมตร ลองออกมาที่โล่งแล้วกด "ลองใหม่"</p>`
+        : `<b class="warn">คุณอยู่ห่างร้าน ${d.distance} เมตร</b><p>(ต้องอยู่ในระยะ ${d.radius} เมตร) จะลงเวลาใหม่ตอนเข้าใกล้ร้านไหม</p>
+           <p class="muted">ถ้ากด "ลงเวลาเลย" จะบันทึกได้ แต่มีป้ายเตือนให้เจ๊ตรวจ</p>`;
+      hide('stepBox'); show('confirmBox');
+    } else {
+      $('doneType').innerHTML = `<b class="${d.type === 'เข้า' ? 'ok' : 'bad'}">ลงเวลา${d.type}งานแล้ว</b>`;
+      $('doneTime').textContent = d.time;
+      $('doneInfo').textContent = d.branch + ' · ห่างร้าน ' + d.distance + ' ม.';
+      $('doneFlags').textContent = d.flags.length ? '⚠️ ' + d.flags.join(' · ') : '';
+      hide('stepBox', 'confirmBox'); show('doneBox');
+    }
+  } catch (e) {
+    alert(e.message);
+  }
+  state.sending = false; check();
+  $('sendBtn').textContent = 'บันทึกเวลา';
+  $('forceBtn').disabled = false;
+}
+
+function dist(a1, o1, a2, o2) {
+  const R = 6371000, r = Math.PI / 180;
+  const x = Math.sin((a2 - a1) * r / 2) ** 2 + Math.cos(a1 * r) * Math.cos(a2 * r) * Math.sin((o2 - o1) * r / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(x));
+}
+
+start();
+</script>
+</body>
+</html>
