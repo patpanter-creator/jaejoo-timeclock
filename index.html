@@ -6,7 +6,7 @@
 <title>ลงเวลา ร้านเจ๊จู</title>
 <script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
 <style>
-  :root { --red:#d62828; --green:#2a9d55; --ink:#222; --soft:#f4f4f4; --line:#ddd; }
+  :root { --red:#d62828; --green:#2a9d55; --blue:#1d6fdc; --ink:#222; --soft:#f4f4f4; --line:#ddd; }
   * { box-sizing: border-box; }
   body { margin:0; font-family: -apple-system, "Sukhumvit Set", "Noto Sans Thai", sans-serif; color:var(--ink); background:#fff8f0; }
   header { background:var(--red); color:#fff; padding:16px; text-align:center; }
@@ -22,17 +22,27 @@
   .in { background:var(--green); color:#fff; }
   .out { background:var(--red); color:#fff; }
   .sec { background:var(--soft); color:var(--ink); border:1px solid var(--line); }
-  .go { background:#1d6fdc; color:#fff; margin-top:6px; }
-  select { width:100%; font:inherit; font-size:17px; padding:12px; border-radius:10px; border:1px solid var(--line); background:#fff; }
-  label { display:block; font-weight:600; margin:12px 0 6px; }
+  .go { background:var(--blue); color:#fff; margin-top:10px; }
+  select, textarea { width:100%; font:inherit; font-size:17px; padding:12px; border-radius:10px; border:1px solid var(--line); background:#fff; }
+  textarea { resize:vertical; margin-top:8px; }
+  label { display:block; font-weight:600; margin:16px 0 6px; }
   .muted { color:#666; font-size:14px; }
   .ok { color:var(--green); } .warn { color:#c77800; } .bad { color:var(--red); }
-  #preview { width:100%; border-radius:10px; margin-top:8px; }
+  #preview, #doneImg { width:100%; border-radius:10px; margin-top:8px; }
   .done { text-align:center; }
   .done .time { font-size:56px; font-weight:800; margin:6px 0; }
   .row2 { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:12px; }
   .today li { margin:4px 0; }
   .spin { text-align:center; padding:30px 0; }
+  .branchBox { border:2px solid var(--blue); border-radius:12px; padding:12px 14px; background:#f0f6ff; }
+  .branchBox .hint { font-size:14px; color:#456; }
+  .branchBox .bname { font-size:24px; font-weight:800; margin:2px 0 4px; line-height:1.25; }
+  .change { margin-top:8px; }
+  .change .muted { margin-bottom:4px; }
+  .change select { font-size:15px; padding:9px; }
+  .chips { display:flex; flex-wrap:wrap; gap:8px; }
+  .chips button { width:auto; font-size:15px; font-weight:500; padding:9px 12px; border-radius:20px; background:var(--soft); border:1px solid var(--line); }
+  .chips button.on { background:#ffe7c2; border-color:#e5a54b; }
 </style>
 </head>
 <body>
@@ -47,7 +57,7 @@
   <!-- ลงทะเบียนครั้งแรก -->
   <div class="card hide" id="regBox">
     <b>ลงทะเบียนครั้งแรก</b>
-    <p class="muted">เลือกชื่อเล่นของตัวเอง ทำครั้งเดียว เลือกแล้วเปลี่ยนเองไม่ได้ ถ้าเลือกผิดให้แจ้งเจ๊</p>
+    <p class="muted">เลือกชื่อของตัวเอง ทำครั้งเดียว เลือกแล้วเปลี่ยนเองไม่ได้ ถ้าเลือกผิดให้แจ้งเจ๊</p>
     <select id="regName"></select>
     <button class="go" id="regBtn">ยืนยัน นี่คือชื่อของฉัน</button>
   </div>
@@ -67,14 +77,31 @@
   <div id="stepBox" class="hide">
     <div class="card">
       <b id="stepTitle"></b>
-      <label>1. ตำแหน่ง</label>
-      <div id="gpsStatus" class="muted">กำลังหาตำแหน่ง...</div>
-      <label>2. สาขา</label>
-      <select id="branch"></select>
-      <label>3. ถ่ายรูปตัวเองที่ร้าน</label>
+
+      <label>1. สาขา</label>
+      <div class="branchBox">
+        <div class="hint" id="branchHint">กำลังหาตำแหน่ง...</div>
+        <div class="bname" id="branchName"></div>
+        <div id="gpsStatus" class="muted"></div>
+      </div>
+      <div class="change">
+        <div class="muted">ไม่ใช่สาขานี้? กดเปลี่ยนได้</div>
+        <select id="branch"></select>
+      </div>
+
+      <label>2. ถ่ายรูปตัวเองที่ร้าน</label>
       <input type="file" id="photo" accept="image/*" capture="user" class="hide">
       <button class="sec" id="photoBtn">📷 เปิดกล้อง</button>
       <img id="preview" class="hide" alt="">
+
+      <label>3. หมายเหตุ <span class="muted">(ไม่บังคับ)</span></label>
+      <div class="chips" id="chips">
+        <button type="button" data-t="มาสาย - ไปทำธุระ">มาสาย - ไปทำธุระ</button>
+        <button type="button" data-t="กลับก่อน - ไปทำธุระ">กลับก่อน - ไปทำธุระ</button>
+        <button type="button" data-t="">อื่นๆ</button>
+      </div>
+      <textarea id="note" rows="2" maxlength="200" placeholder="พิมพ์เพิ่มได้ เช่น ไปหาหมอ / รถเสีย"></textarea>
+
       <button class="go" id="sendBtn" disabled>บันทึกเวลา</button>
       <button class="sec" id="cancelBtn" style="margin-top:8px">ยกเลิก</button>
     </div>
@@ -93,22 +120,25 @@
   <div class="card done hide" id="doneBox">
     <div id="doneType"></div>
     <div class="time" id="doneTime"></div>
+    <div id="doneName"></div>
     <div id="doneInfo" class="muted"></div>
+    <div id="doneNote" class="muted"></div>
     <div id="doneFlags" class="warn"></div>
+    <img id="doneImg" alt="">
     <button class="sec" id="closeBtn" style="margin-top:16px">ปิด</button>
   </div>
 </main>
 
 <script>
-// ===== ค่าที่ต้องใส่ (ลูซี่เติมให้) =====
+// ===== ค่าระบบ =====
 const LIFF_ID = '2012745769-tDbhTx2R';
 const GAS_URL = 'https://script.google.com/macros/s/AKfycbwI0pvDcEvNOINQqjuMFuqW7DjmueQPfFcn0udlsT3Ay-7bvHKtGhdonPaWtoSixujQpw/exec';
-// ======================================
+// ==================
 
 const $ = id => document.getElementById(id);
 const show = (...ids) => ids.forEach(i => $(i).classList.remove('hide'));
 const hide = (...ids) => ids.forEach(i => $(i).classList.add('hide'));
-let state = { branches: [], type: '', pos: null, photo: null, sending: false };
+let state = { branches: [], me: {}, type: '', pos: null, auto: '', raw: null, stamped: null, prep: null, sending: false };
 
 async function api(action, data) {
   const idToken = liff.getIDToken();
@@ -122,9 +152,11 @@ async function api(action, data) {
   return out;
 }
 
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' }[c])); }
+
 function fail(msg) {
   hide('loading');
-  $('error').innerHTML = '<b class="bad">ทำรายการไม่สำเร็จ</b><p>' + msg + '</p>';
+  $('error').innerHTML = '<b class="bad">ทำรายการไม่สำเร็จ</b><p>' + esc(msg) + '</p>';
   show('error');
 }
 
@@ -139,17 +171,19 @@ async function start() {
     else {
       $('who').textContent = d.lineName;
       $('regName').innerHTML = '<option value="">-- เลือกชื่อ --</option>' +
-        d.names.map(n => `<option>${n}</option>`).join('');
+        d.names.map(n => `<option value="${esc(n.nickname)}">${esc(n.nickname)}${n.fullName ? ' — ' + esc(n.fullName) : ''}</option>`).join('');
       show('regBox');
     }
   } catch (e) { fail(e.message); }
 }
 
 function showMain(d) {
-  $('who').textContent = d.nickname + ' · ' + d.code;
+  state.me = { nickname: d.nickname, fullName: d.fullName || '', code: d.code };
+  $('who').innerHTML = '<b>' + esc(d.nickname) + '</b>' + (d.fullName ? ' · ' + esc(d.fullName) : '') +
+    '<div style="font-size:13px;opacity:.85">' + esc(d.code) + '</div>';
   const list = d.today || [];
   $('todayList').innerHTML = list.length
-    ? '<li><b>วันนี้ลงไปแล้ว</b></li>' + list.map(s => `<li>${s.type} ${s.time} น. · ${s.branch}</li>`).join('')
+    ? '<li><b>วันนี้ลงไปแล้ว</b></li>' + list.map(s => `<li>${esc(s.type)} ${esc(s.time)} น. · ${esc(s.branch)}</li>`).join('')
     : '';
   hide('regBox', 'stepBox', 'confirmBox', 'doneBox');
   show('mainBox');
@@ -169,21 +203,26 @@ $('btnIn').onclick = () => begin('เข้า');
 $('btnOut').onclick = () => begin('ออก');
 
 function begin(type) {
-  state.type = type; state.photo = null; state.pos = null;
+  state.type = type; state.raw = null; state.stamped = null; state.prep = null; state.pos = null; state.auto = '';
   $('stepTitle').textContent = type === 'เข้า' ? 'ลงเวลาเข้างาน' : 'ลงเวลาออกงาน';
-  $('branch').innerHTML = state.branches.map(b => `<option>${b.name}</option>`).join('');
+  $('branch').innerHTML = state.branches.map(b => `<option>${esc(b.name)}</option>`).join('');
   $('preview').src = ''; hide('preview', 'mainBox', 'confirmBox');
   $('photoBtn').textContent = '📷 เปิดกล้อง';
+  $('note').value = '';
+  document.querySelectorAll('#chips button').forEach(b => b.classList.remove('on'));
   show('stepBox');
   getGps();
   check();
 }
 
 function getGps() {
-  state.pos = null; check();
+  state.pos = null; state.stamped = null; check();
+  $('branchHint').className = 'hint';
+  $('branchHint').textContent = 'กำลังหาตำแหน่ง...';
+  $('branchName').textContent = '';
   $('gpsStatus').className = 'muted';
-  $('gpsStatus').textContent = 'กำลังหาตำแหน่ง...';
-  if (!navigator.geolocation) { $('gpsStatus').textContent = 'มือถือนี้ใช้ GPS ไม่ได้'; return; }
+  $('gpsStatus').textContent = '';
+  if (!navigator.geolocation) { $('branchHint').textContent = 'มือถือนี้ใช้ GPS ไม่ได้'; return; }
   navigator.geolocation.getCurrentPosition(p => {
     state.pos = { lat: p.coords.latitude, lng: p.coords.longitude, acc: p.coords.accuracy };
     // เลือกสาขาที่ใกล้ที่สุดให้อัตโนมัติ
@@ -192,34 +231,52 @@ function getGps() {
       const d = dist(state.pos.lat, state.pos.lng, b.lat, b.lng);
       if (!best || d < best.d) best = { b, d };
     });
-    if (best) $('branch').value = best.b.name;
+    if (best) { $('branch').value = best.b.name; state.auto = best.b.name; }
     updateGpsText();
     check();
   }, err => {
-    $('gpsStatus').className = 'bad';
-    $('gpsStatus').textContent = err.code === 1
+    $('branchHint').className = 'hint bad';
+    $('branchHint').textContent = err.code === 1
       ? 'ไม่ได้อนุญาตให้ใช้ตำแหน่ง ไปที่ตั้งค่ามือถือ > LINE > ตำแหน่ง แล้วเปิดเป็น "อนุญาต"'
-      : 'หาตำแหน่งไม่เจอ เปิด GPS แล้วกดลองใหม่';
+      : 'หาตำแหน่งไม่เจอ เปิด GPS แล้วกดยกเลิก เข้าใหม่อีกครั้ง';
   }, { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 });
 }
 
+function curBranch() { return state.branches.find(x => x.name === $('branch').value); }
+function curDist() { const b = curBranch(); return Math.round(dist(state.pos.lat, state.pos.lng, b.lat, b.lng)); }
+
 function updateGpsText() {
   if (!state.pos) return;
-  const b = state.branches.find(x => x.name === $('branch').value);
-  const d = Math.round(dist(state.pos.lat, state.pos.lng, b.lat, b.lng));
+  const b = curBranch();
+  const d = curDist();
   const inside = d <= b.radius;
+  $('branchHint').className = 'hint';
+  $('branchHint').textContent = b.name === state.auto ? '📍 ระบบเลือกให้ (ใกล้ที่สุด)' : '✋ เลือกเอง';
+  $('branchName').textContent = b.name;
   $('gpsStatus').className = inside ? 'ok' : 'warn';
-  $('gpsStatus').textContent = (inside ? '✅ อยู่ที่ร้าน' : '⚠️ อยู่ห่างร้าน') + ` ${d} เมตร (GPS ±${Math.round(state.pos.acc)} ม.)`;
+  $('gpsStatus').textContent = (inside ? '✅ อยู่ที่ร้าน · ห่าง' : '⚠️ อยู่ห่างร้าน') + ` ${d} เมตร (GPS ±${Math.round(state.pos.acc)} ม.)`;
 }
-$('branch').onchange = updateGpsText;
+$('branch').onchange = () => { state.stamped = null; updateGpsText(); };
+
+// ----- หมายเหตุ -----
+document.querySelectorAll('#chips button').forEach(btn => {
+  btn.onclick = () => {
+    document.querySelectorAll('#chips button').forEach(b => b.classList.remove('on'));
+    btn.classList.add('on');
+    const t = btn.dataset.t;
+    $('note').value = t ? t + ': ' : '';
+    $('note').focus();
+  };
+});
 
 // ----- รูป -----
 $('photoBtn').onclick = () => $('photo').click();
 $('photo').onchange = async e => {
   const f = e.target.files[0];
   if (!f) return;
-  state.photo = await shrink(f, 1024, 0.7);
-  $('preview').src = state.photo; show('preview');
+  state.raw = await shrink(f, 1024, 0.8);
+  state.stamped = null;
+  $('preview').src = state.raw; show('preview');
   $('photoBtn').textContent = '📷 ถ่ายใหม่';
   e.target.value = '';
   check();
@@ -241,7 +298,100 @@ function shrink(file, max, q) {
   });
 }
 
-function check() { $('sendBtn').disabled = !(state.pos && state.photo) || state.sending; }
+// ----- ประทับข้อความลงรูป (แบบ Timemark) -----
+function roundRect(g, x, y, w, h, r, color) {
+  g.beginPath();
+  g.moveTo(x + r, y); g.lineTo(x + w - r, y); g.quadraticCurveTo(x + w, y, x + w, y + r);
+  g.lineTo(x + w, y + h - r); g.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  g.lineTo(x + r, y + h); g.quadraticCurveTo(x, y + h, x, y + h - r);
+  g.lineTo(x, y + r); g.quadraticCurveTo(x, y, x + r, y);
+  g.closePath(); g.fillStyle = color; g.fill();
+}
+
+function fmtDur(min) {
+  const h = Math.floor(min / 60), m = min % 60;
+  return (h ? h + ' ชม. ' : '') + m + ' นาที';
+}
+
+function stampPhoto(src, t) {
+  return new Promise((ok, no) => {
+    const img = new Image();
+    img.onload = () => {
+      const W = img.width, H = img.height;
+      const s = Math.min(W, H) / 760;
+      const F = 'sans-serif';
+      const c = document.createElement('canvas'); c.width = W; c.height = H;
+      const g = c.getContext('2d');
+      g.drawImage(img, 0, 0);
+      g.textBaseline = 'middle';
+
+      const P = Math.round(22 * s);
+      const headH = Math.round(66 * s);
+      const lineH = Math.round(40 * s);
+      const barH = t.inTime ? Math.round(104 * s) : 0;
+      const blockH = headH + lineH * 3 + P * 2.2;
+      const top = H - barH - blockH;
+
+      // พื้นเงาให้อ่านตัวหนังสือออก
+      const fadeTop = Math.max(0, top - 50 * s);
+      const grd = g.createLinearGradient(0, fadeTop, 0, H);
+      grd.addColorStop(0, 'rgba(0,0,0,0)');
+      grd.addColorStop(0.3, 'rgba(0,0,0,.5)');
+      grd.addColorStop(1, 'rgba(0,0,0,.7)');
+      g.fillStyle = grd; g.fillRect(0, fadeTop, W, H - fadeTop);
+
+      // ป้าย เข้างาน/เลิกงาน + เวลา
+      const lab = t.type === 'เข้า' ? 'เข้างาน' : 'เลิกงาน';
+      const labF = `bold ${Math.round(34 * s)}px ${F}`, timeF = `bold ${Math.round(52 * s)}px ${F}`;
+      g.font = labF; const lw = g.measureText(lab).width + P * 1.4;
+      g.font = timeF; const tw = g.measureText(t.time).width + P * 1.4;
+      const x = P, y = top + P;
+      roundRect(g, x, y, lw + tw, headH, 10 * s, '#ffffff');
+      roundRect(g, x, y, lw, headH, 10 * s, t.type === 'เข้า' ? '#2a9d55' : '#d62828');
+      g.fillStyle = '#fff'; g.font = labF; g.fillText(lab, x + P * 0.7, y + headH / 2);
+      g.fillStyle = '#111'; g.font = timeF; g.fillText(t.time, x + lw + P * 0.7, y + headH / 2);
+
+      // 3 บรรทัด: วันที่ / ชื่อ / สาขา
+      const ly0 = y + headH + P * 0.5;
+      g.fillStyle = '#ffd166'; g.fillRect(x, ly0, Math.max(3, 4 * s), lineH * 3);
+      const tx = x + 16 * s, maxW = W - tx - P;
+      const lines = [
+        t.day + ' ' + t.date,
+        t.nickname + (t.fullName ? ' · ' + t.fullName : '') + ' · ' + t.code,
+        t.branch + ' · ห่างร้าน ' + t.dist + ' ม.'
+      ];
+      g.fillStyle = '#fff';
+      lines.forEach((L, i) => {
+        g.font = `${i === 0 ? 'bold ' : ''}${Math.round(29 * s)}px ${F}`;
+        g.fillText(L, tx, ly0 + lineH * i + lineH / 2, maxW);
+      });
+
+      // ชื่อร้าน มุมขวาบนของกล่อง
+      g.font = `bold ${Math.round(22 * s)}px ${F}`;
+      g.textAlign = 'right'; g.fillStyle = 'rgba(255,255,255,.85)';
+      g.fillText('ร้านเจ๊จูลูกชิ้นปิ้ง', W - P, y + headH / 2);
+      g.textAlign = 'left';
+
+      // แถบล่างตอนเลิกงาน
+      if (barH) {
+        const by = H - barH;
+        g.fillStyle = '#1d6fdc'; g.fillRect(0, by, W, barH);
+        const half = W / 2;
+        g.fillStyle = 'rgba(255,255,255,.85)'; g.font = `${Math.round(22 * s)}px ${F}`;
+        g.fillText('เข้าเวร', P, by + 28 * s);
+        g.fillText('เวลาทำงาน', half + P * 0.5, by + 28 * s);
+        g.fillStyle = '#fff'; g.font = `bold ${Math.round(40 * s)}px ${F}`;
+        g.fillText(t.inTime + ' - ' + t.time, P, by + 70 * s, half - P * 1.5);
+        g.fillText(fmtDur(t.workMin), half + P * 0.5, by + 70 * s, half - P * 1.5);
+      }
+      ok(c.toDataURL('image/jpeg', 0.8));
+    };
+    img.onerror = no;
+    img.src = src;
+  });
+}
+
+function check() { $('sendBtn').disabled = !(state.pos && state.raw) || state.sending; }
 
 // ----- ส่ง -----
 $('sendBtn').onclick = () => send(false);
@@ -255,10 +405,22 @@ async function send(force) {
   $('sendBtn').textContent = 'กำลังบันทึก...';
   $('forceBtn').disabled = true;
   try {
+    // ขอเวลาจากระบบ แล้วประทับลงรูป (กด "ลงเวลาเลย" ใช้รูปที่ประทับไว้แล้ว)
+    if (!force || !state.stamped) {
+      const p = await api('prep', { type: state.type });
+      state.prep = p;
+      state.stamped = await stampPhoto(state.raw, {
+        type: state.type, time: p.time, date: p.date, day: p.day,
+        inTime: p.inTime, workMin: p.workMin,
+        nickname: state.me.nickname, fullName: state.me.fullName, code: state.me.code,
+        branch: $('branch').value, dist: curDist()
+      });
+    }
     const d = await api('clock', {
       type: state.type, branch: $('branch').value,
       lat: state.pos.lat, lng: state.pos.lng, accuracy: state.pos.acc,
-      photo: state.photo, force
+      photo: state.stamped, ts: state.prep.ts, sig: state.prep.sig,
+      note: $('note').value.trim(), force
     });
     if (d.needConfirm) {
       $('confirmMsg').innerHTML = d.reason === 'gps'
@@ -269,11 +431,15 @@ async function send(force) {
     } else {
       $('doneType').innerHTML = `<b class="${d.type === 'เข้า' ? 'ok' : 'bad'}">ลงเวลา${d.type}งานแล้ว</b>`;
       $('doneTime').textContent = d.time;
+      $('doneName').innerHTML = '<b>' + esc(state.me.nickname) + '</b>' + (state.me.fullName ? ' · ' + esc(state.me.fullName) : '');
       $('doneInfo').textContent = d.branch + ' · ห่างร้าน ' + d.distance + ' ม.';
+      $('doneNote').textContent = d.note ? 'หมายเหตุ: ' + d.note : '';
       $('doneFlags').textContent = d.flags.length ? '⚠️ ' + d.flags.join(' · ') : '';
+      $('doneImg').src = state.stamped;
       hide('stepBox', 'confirmBox'); show('doneBox');
     }
   } catch (e) {
+    state.stamped = null;
     alert(e.message);
   }
   state.sending = false; check();
