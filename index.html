@@ -138,7 +138,7 @@ const GAS_URL = 'https://script.google.com/macros/s/AKfycbwI0pvDcEvNOINQqjuMFuqW
 const $ = id => document.getElementById(id);
 const show = (...ids) => ids.forEach(i => $(i).classList.remove('hide'));
 const hide = (...ids) => ids.forEach(i => $(i).classList.add('hide'));
-let state = { branches: [], me: {}, type: '', pos: null, auto: '', raw: null, stamped: null, prep: null, sending: false };
+let state = { branches: [], me: {}, type: '', pos: null, live: null, auto: '', manual: false, raw: null, stamped: null, prep: null, sending: false };
 
 async function api(action, data) {
   const idToken = liff.getIDToken();
@@ -160,24 +160,51 @@ function fail(msg) {
   show('error');
 }
 
+// ----- จำข้อมูลพนักงานไว้ในมือถือ (เปิดครั้งต่อไปขึ้นปุ่มทันที ไม่ต้องรอระบบ) -----
+let cacheKey = '';
+function loadMe() { try { return JSON.parse(localStorage.getItem(cacheKey) || 'null'); } catch (e) { return null; } }
+function saveMe(d) {
+  try { localStorage.setItem(cacheKey, JSON.stringify({ nickname: d.nickname, fullName: d.fullName || '', code: d.code, branches: state.branches })); } catch (e) {}
+}
+function clearMe() { try { localStorage.removeItem(cacheKey); } catch (e) {} }
+
 async function start() {
+  let cached = null;
   try {
     await liff.init({ liffId: LIFF_ID });
     if (!liff.isLoggedIn()) { liff.login(); return; }
+    const tok = liff.getDecodedIDToken();
+    cacheKey = 'jj_me_' + (tok && tok.sub ? tok.sub : 'x');
+    cached = loadMe();
+    if (cached && cached.branches && cached.branches.length) {
+      state.branches = cached.branches;
+      hide('loading');
+      showMain(cached);
+      startGps();
+    }
+    // เช็กกับระบบเบื้องหลัง (อัปเดตรายการวันนี้ / ชื่อ / สาขา)
     const d = await api('init');
     state.branches = d.branches;
     hide('loading');
-    if (d.registered) showMain(d);
-    else {
+    if (d.registered) {
+      saveMe(d);
+      renderMe(d);
+      if (!cached) { showMain(d); startGps(); }
+    } else {
+      clearMe();
+      hide('mainBox', 'stepBox', 'confirmBox', 'doneBox');
       $('who').textContent = d.lineName;
       $('regName').innerHTML = '<option value="">-- เลือกชื่อ --</option>' +
         d.names.map(n => `<option value="${esc(n.nickname)}">${esc(n.nickname)}${n.fullName ? ' — ' + esc(n.fullName) : ''}</option>`).join('');
       show('regBox');
     }
-  } catch (e) { fail(e.message); }
+  } catch (e) {
+    if (!cached) fail(e.message);
+  }
 }
 
-function showMain(d) {
+// ชื่อที่หัวจอ + รายการที่ลงไปแล้ววันนี้
+function renderMe(d) {
   state.me = { nickname: d.nickname, fullName: d.fullName || '', code: d.code };
   $('who').innerHTML = '<b>' + esc(d.nickname) + '</b>' + (d.fullName ? ' · ' + esc(d.fullName) : '') +
     '<div style="font-size:13px;opacity:.85">' + esc(d.code) + '</div>';
@@ -185,6 +212,10 @@ function showMain(d) {
   $('todayList').innerHTML = list.length
     ? '<li><b>วันนี้ลงไปแล้ว</b></li>' + list.map(s => `<li>${esc(s.type)} ${esc(s.time)} น. · ${esc(s.branch)}</li>`).join('')
     : '';
+}
+
+function showMain(d) {
+  renderMe(d);
   hide('regBox', 'stepBox', 'confirmBox', 'doneBox');
   show('mainBox');
 }
@@ -193,7 +224,7 @@ $('regBtn').onclick = async () => {
   const n = $('regName').value;
   if (!n) return alert('กรุณาเลือกชื่อ');
   $('regBtn').disabled = true;
-  try { const d = await api('register', { nickname: n }); showMain(d); }
+  try { const d = await api('register', { nickname: n }); saveMe(d); showMain(d); startGps(); }
   catch (e) { fail(e.message); }
   $('regBtn').disabled = false;
 };
@@ -203,7 +234,7 @@ $('btnIn').onclick = () => begin('เข้า');
 $('btnOut').onclick = () => begin('ออก');
 
 function begin(type) {
-  state.type = type; state.raw = null; state.stamped = null; state.prep = null; state.pos = null; state.auto = '';
+  state.type = type; state.raw = null; state.stamped = null; state.prep = null; state.pos = null; state.auto = ''; state.manual = false;
   $('stepTitle').textContent = type === 'เข้า' ? 'ลงเวลาเข้างาน' : 'ลงเวลาออกงาน';
   $('branch').innerHTML = state.branches.map(b => `<option>${esc(b.name)}</option>`).join('');
   $('preview').src = ''; hide('preview', 'mainBox', 'confirmBox');
@@ -211,7 +242,48 @@ function begin(type) {
   $('note').value = '';
   document.querySelectorAll('#chips button').forEach(b => b.classList.remove('on'));
   show('stepBox');
-  getGps();
+  // ใช้ตำแหน่งที่หาไว้ตั้งแต่เปิดหน้า ถ้ายังใหม่ (ไม่เกิน 2 นาที)
+  if (state.live && Date.now() - state.live.at < 120000) applyPos(state.live);
+  else getGps();
+  check();
+}
+
+// ----- GPS: เริ่มหาตั้งแต่เปิดหน้า และอัปเดตต่อเนื่อง -----
+const GPS_OPT = { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 };
+let watching = false;
+const onStep = () => !$('stepBox').classList.contains('hide');
+
+function startGps() {
+  if (watching || !navigator.geolocation) return;
+  watching = true;
+  navigator.geolocation.watchPosition(onPos, onGpsErr, GPS_OPT);
+}
+
+function onPos(p) {
+  state.live = { lat: p.coords.latitude, lng: p.coords.longitude, acc: p.coords.accuracy, at: Date.now() };
+  if (onStep() && !state.sending) applyPos(state.live);
+}
+
+function onGpsErr(err) {
+  if (!onStep() || state.pos) return;
+  $('branchHint').className = 'hint bad';
+  $('branchHint').textContent = err.code === 1
+    ? 'ไม่ได้อนุญาตให้ใช้ตำแหน่ง ไปที่ตั้งค่ามือถือ > LINE > ตำแหน่ง แล้วเปิดเป็น "อนุญาต"'
+    : 'หาตำแหน่งไม่เจอ เปิด GPS แล้วกดยกเลิก เข้าใหม่อีกครั้ง';
+}
+
+function applyPos(live) {
+  const changed = !state.pos || state.pos.lat !== live.lat || state.pos.lng !== live.lng;
+  state.pos = { lat: live.lat, lng: live.lng, acc: live.acc };
+  if (changed) state.stamped = null;
+  // เลือกสาขาที่ใกล้ที่สุดให้อัตโนมัติ (ถ้าพนักงานยังไม่ได้เปลี่ยนเอง)
+  let best = null;
+  state.branches.forEach(b => {
+    const d = dist(state.pos.lat, state.pos.lng, b.lat, b.lng);
+    if (!best || d < best.d) best = { b, d };
+  });
+  if (best) { state.auto = best.b.name; if (!state.manual) $('branch').value = best.b.name; }
+  updateGpsText();
   check();
 }
 
@@ -223,23 +295,8 @@ function getGps() {
   $('gpsStatus').className = 'muted';
   $('gpsStatus').textContent = '';
   if (!navigator.geolocation) { $('branchHint').textContent = 'มือถือนี้ใช้ GPS ไม่ได้'; return; }
-  navigator.geolocation.getCurrentPosition(p => {
-    state.pos = { lat: p.coords.latitude, lng: p.coords.longitude, acc: p.coords.accuracy };
-    // เลือกสาขาที่ใกล้ที่สุดให้อัตโนมัติ
-    let best = null;
-    state.branches.forEach(b => {
-      const d = dist(state.pos.lat, state.pos.lng, b.lat, b.lng);
-      if (!best || d < best.d) best = { b, d };
-    });
-    if (best) { $('branch').value = best.b.name; state.auto = best.b.name; }
-    updateGpsText();
-    check();
-  }, err => {
-    $('branchHint').className = 'hint bad';
-    $('branchHint').textContent = err.code === 1
-      ? 'ไม่ได้อนุญาตให้ใช้ตำแหน่ง ไปที่ตั้งค่ามือถือ > LINE > ตำแหน่ง แล้วเปิดเป็น "อนุญาต"'
-      : 'หาตำแหน่งไม่เจอ เปิด GPS แล้วกดยกเลิก เข้าใหม่อีกครั้ง';
-  }, { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 });
+  startGps();
+  navigator.geolocation.getCurrentPosition(onPos, onGpsErr, GPS_OPT);
 }
 
 function curBranch() { return state.branches.find(x => x.name === $('branch').value); }
@@ -256,7 +313,7 @@ function updateGpsText() {
   $('gpsStatus').className = inside ? 'ok' : 'warn';
   $('gpsStatus').textContent = (inside ? '✅ อยู่ที่ร้าน · ห่าง' : '⚠️ อยู่ห่างร้าน') + ` ${d} เมตร (GPS ±${Math.round(state.pos.acc)} ม.)`;
 }
-$('branch').onchange = () => { state.stamped = null; updateGpsText(); };
+$('branch').onchange = () => { state.manual = true; state.stamped = null; updateGpsText(); };
 
 // ----- หมายเหตุ -----
 document.querySelectorAll('#chips button').forEach(btn => {
