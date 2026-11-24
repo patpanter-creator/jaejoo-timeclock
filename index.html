@@ -44,6 +44,7 @@
   .chips { display:flex; flex-wrap:wrap; gap:8px; }
   .chips button { width:auto; font-size:15px; font-weight:500; padding:9px 12px; border-radius:20px; background:var(--soft); border:1px solid var(--line); }
   .chips button.on { background:#ffe7c2; border-color:#e5a54b; }
+  .ver { text-align:center; color:#aaa; font-size:12px; margin-top:8px; }
 </style>
 </head>
 <body>
@@ -128,15 +129,21 @@
     <img id="doneImg" alt="">
     <button class="sec" id="closeBtn" style="margin-top:16px">ปิด</button>
   </div>
+
+  <!-- เลขฉบับ: หน้า = index.html บน GitHub / ระบบ = Code.gs ที่ Deploy แล้ว (ขึ้น ? = ยังเป็นโค้ดเก่า) -->
+  <div class="ver" id="ver"></div>
 </main>
 
 <script>
 // ===== ค่าระบบ =====
 const LIFF_ID = '2012745769-tDbhTx2R';
 const GAS_URL = 'https://script.google.com/macros/s/AKfycbwI0pvDcEvNOINQqjuMFuqW7DjmueQPfFcn0udlsT3Ay-7bvHKtGhdonPaWtoSixujQpw/exec';
+const PAGE_VERSION = '3.1 (24/11)';   // เลขฉบับของหน้านี้ — แก้หน้าครั้งหน้าให้เปลี่ยนเลขนี้ด้วย
 // ==================
 
 const $ = id => document.getElementById(id);
+let serverVer = '';
+function showVer() { $('ver').textContent = 'หน้า v' + PAGE_VERSION + ' · ระบบ v' + (serverVer || '…'); }
 const show = (...ids) => ids.forEach(i => $(i).classList.remove('hide'));
 const hide = (...ids) => ids.forEach(i => $(i).classList.add('hide'));
 let state = { branches: [], me: {}, type: '', pos: null, live: null, auto: '', manual: false, raw: null, stamped: null, prep: null, sending: false };
@@ -164,6 +171,7 @@ async function api(action, data) {
     body: JSON.stringify(Object.assign({ action, idToken }, data || {}))
   });
   const out = await res.json();
+  serverVer = out.ver || '? (โค้ดเก่า)'; showVer();
   if (!out.ok) throw new Error(out.error || 'เกิดข้อผิดพลาด');
   return out;
 }
@@ -196,6 +204,7 @@ function showCached(c) {
 }
 
 async function start() {
+  showVer();
   let cached = null;
   // 1) ขึ้นปุ่มทันทีจากข้อมูลที่มือถือจำไว้ ไม่ต้องรอไลน์ (ตอนกดบันทึกยังยืนยันตัวตนกับไลน์จริงเหมือนเดิม)
   try { const last = localStorage.getItem(LAST_KEY); if (last) { cacheKey = last; cached = loadMe(); } } catch (e) {}
