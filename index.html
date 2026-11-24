@@ -4,7 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 <title>ลงเวลา ร้านเจ๊จู</title>
-<script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+<link rel="preload" as="script" href="https://static.line-scdn.net/liff/edge/2/sdk.js">
+<link rel="preconnect" href="https://script.google.com">
 <style>
   :root { --red:#d62828; --green:#2a9d55; --blue:#1d6fdc; --ink:#222; --soft:#f4f4f4; --line:#ddd; }
   * { box-sizing: border-box; }
@@ -140,7 +141,22 @@ const show = (...ids) => ids.forEach(i => $(i).classList.remove('hide'));
 const hide = (...ids) => ids.forEach(i => $(i).classList.add('hide'));
 let state = { branches: [], me: {}, type: '', pos: null, live: null, auto: '', manual: false, raw: null, stamped: null, prep: null, sending: false };
 
+// โหลดระบบไลน์แบบไม่บังหน้าจอ (หน้าเว็บขึ้นปุ่มได้ก่อน ไลน์โหลดตามหลัง)
+let liffReady = null;
+function loadSdk() {
+  return new Promise((ok, no) => {
+    if (window.liff) return ok();
+    const s = document.createElement('script');
+    s.src = 'https://static.line-scdn.net/liff/edge/2/sdk.js';
+    s.charset = 'utf-8';
+    s.onload = () => ok();
+    s.onerror = () => no(new Error('โหลดระบบไลน์ไม่สำเร็จ ปิดแล้วเปิดใหม่อีกครั้ง'));
+    document.head.appendChild(s);
+  });
+}
+
 async function api(action, data) {
+  await liffReady;
   const idToken = liff.getIDToken();
   const res = await fetch(GAS_URL, {
     method: 'POST',
@@ -168,20 +184,36 @@ function saveMe(d) {
 }
 function clearMe() { try { localStorage.removeItem(cacheKey); } catch (e) {} }
 
+const LAST_KEY = 'jj_me_last';   // จำว่ามือถือเครื่องนี้ใช้บัญชีไลน์ไหนล่าสุด
+
+function showCached(c) {
+  if (!(c && c.branches && c.branches.length)) return false;
+  state.branches = c.branches;
+  hide('loading');
+  showMain(c);
+  startGps();
+  return true;
+}
+
 async function start() {
   let cached = null;
+  // 1) ขึ้นปุ่มทันทีจากข้อมูลที่มือถือจำไว้ ไม่ต้องรอไลน์ (ตอนกดบันทึกยังยืนยันตัวตนกับไลน์จริงเหมือนเดิม)
+  try { const last = localStorage.getItem(LAST_KEY); if (last) { cacheKey = last; cached = loadMe(); } } catch (e) {}
+  if (!showCached(cached)) cached = null;
+  liffReady = loadSdk().then(() => liff.init({ liffId: LIFF_ID }));
   try {
-    await liff.init({ liffId: LIFF_ID });
+    await liffReady;
     if (!liff.isLoggedIn()) { liff.login(); return; }
     const tok = liff.getDecodedIDToken();
-    cacheKey = 'jj_me_' + (tok && tok.sub ? tok.sub : 'x');
-    cached = loadMe();
-    if (cached && cached.branches && cached.branches.length) {
-      state.branches = cached.branches;
-      hide('loading');
-      showMain(cached);
-      startGps();
+    const key = 'jj_me_' + (tok && tok.sub ? tok.sub : 'x');
+    if (key !== cacheKey) {
+      // คนละบัญชีไลน์กับที่มือถือจำไว้ → ซ่อนปุ่มเดิม ใช้ข้อมูลของบัญชีนี้แทน
+      if (cached) { hide('mainBox', 'stepBox', 'confirmBox', 'doneBox'); show('loading'); $('who').textContent = ''; }
+      cacheKey = key;
+      cached = loadMe();
+      if (!showCached(cached)) cached = null;
     }
+    try { localStorage.setItem(LAST_KEY, cacheKey); } catch (e) {}
     // เช็กกับระบบเบื้องหลัง (อัปเดตรายการวันนี้ / ชื่อ / สาขา)
     const d = await api('init');
     state.branches = d.branches;
@@ -457,10 +489,28 @@ $('retryBtn').onclick = () => { hide('confirmBox'); show('stepBox'); getGps(); }
 $('cancelBtn').onclick = () => { hide('stepBox'); show('mainBox'); };
 $('closeBtn').onclick = () => { if (liff.isInClient()) liff.closeWindow(); else location.reload(); };
 
+function showConfirm(d) {
+  $('confirmMsg').innerHTML = d.reason === 'gps'
+    ? `<b class="warn">สัญญาณ GPS ไม่ชัด</b><p>ตำแหน่งคลาดได้ถึง ±${d.accuracy} เมตร ลองออกมาที่โล่งแล้วกด "ลองใหม่"</p>`
+    : `<b class="warn">คุณอยู่ห่างร้าน ${d.distance} เมตร</b><p>(ต้องอยู่ในระยะ ${d.radius} เมตร) จะลงเวลาใหม่ตอนเข้าใกล้ร้านไหม</p>
+       <p class="muted">ถ้ากด "ลงเวลาเลย" จะบันทึกได้ แต่มีป้ายเตือนให้เจ๊ตรวจ</p>`;
+  hide('stepBox'); show('confirmBox');
+}
+
 async function send(force) {
+  // เช็กระยะ/GPS ในมือถือก่อน ถ้าอยู่นอกรัศมีถามทันที ไม่ต้องรอระบบ (ระบบยังเช็กซ้ำและติดป้ายเหมือนเดิม)
+  if (!force) {
+    const b = curBranch(), dd = curDist(), acc = state.pos.acc;
+    const maxAcc = Number(b.maxAcc) || 100;
+    if (acc > maxAcc || dd > b.radius) {
+      showConfirm({ reason: acc > maxAcc ? 'gps' : 'far', distance: dd, accuracy: Math.round(acc), radius: b.radius });
+      return;
+    }
+  }
   state.sending = true; check();
   $('sendBtn').textContent = 'กำลังบันทึก...';
   $('forceBtn').disabled = true;
+  $('forceBtn').textContent = 'กำลังบันทึก...';
   try {
     // ขอเวลาจากระบบ แล้วประทับลงรูป (กด "ลงเวลาเลย" ใช้รูปที่ประทับไว้แล้ว)
     if (!force || !state.stamped) {
@@ -480,11 +530,7 @@ async function send(force) {
       note: $('note').value.trim(), force
     });
     if (d.needConfirm) {
-      $('confirmMsg').innerHTML = d.reason === 'gps'
-        ? `<b class="warn">สัญญาณ GPS ไม่ชัด</b><p>ตำแหน่งคลาดได้ถึง ±${d.accuracy} เมตร ลองออกมาที่โล่งแล้วกด "ลองใหม่"</p>`
-        : `<b class="warn">คุณอยู่ห่างร้าน ${d.distance} เมตร</b><p>(ต้องอยู่ในระยะ ${d.radius} เมตร) จะลงเวลาใหม่ตอนเข้าใกล้ร้านไหม</p>
-           <p class="muted">ถ้ากด "ลงเวลาเลย" จะบันทึกได้ แต่มีป้ายเตือนให้เจ๊ตรวจ</p>`;
-      hide('stepBox'); show('confirmBox');
+      showConfirm(d);
     } else {
       $('doneType').innerHTML = `<b class="${d.type === 'เข้า' ? 'ok' : 'bad'}">ลงเวลา${d.type}งานแล้ว</b>`;
       $('doneTime').textContent = d.time;
@@ -502,6 +548,7 @@ async function send(force) {
   state.sending = false; check();
   $('sendBtn').textContent = 'บันทึกเวลา';
   $('forceBtn').disabled = false;
+  $('forceBtn').textContent = 'ลงเวลาเลย';
 }
 
 function dist(a1, o1, a2, o2) {
