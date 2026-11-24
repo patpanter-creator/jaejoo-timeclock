@@ -126,6 +126,7 @@
     <div id="doneInfo" class="muted"></div>
     <div id="doneNote" class="muted"></div>
     <div id="doneFlags" class="warn"></div>
+    <div id="doneGroup" class="muted"></div>
     <img id="doneImg" alt="">
     <button class="sec" id="closeBtn" style="margin-top:16px">ปิด</button>
   </div>
@@ -138,7 +139,7 @@
 // ===== ค่าระบบ =====
 const LIFF_ID = '2012745769-tDbhTx2R';
 const GAS_URL = 'https://script.google.com/macros/s/AKfycbwI0pvDcEvNOINQqjuMFuqW7DjmueQPfFcn0udlsT3Ay-7bvHKtGhdonPaWtoSixujQpw/exec';
-const PAGE_VERSION = '3.2 (24/11)';   // เลขฉบับของหน้านี้ — แก้หน้าครั้งหน้าให้เปลี่ยนเลขนี้ด้วย
+const PAGE_VERSION = '3.3 (24/11)';   // เลขฉบับของหน้านี้ — แก้หน้าครั้งหน้าให้เปลี่ยนเลขนี้ด้วย
 // ==================
 
 const $ = id => document.getElementById(id);
@@ -564,7 +565,9 @@ async function send(force) {
       $('doneNote').textContent = d.note ? 'หมายเหตุ: ' + d.note : '';
       $('doneFlags').textContent = d.flags.length ? '⚠️ ' + d.flags.join(' · ') : '';
       $('doneImg').src = state.stamped;
+      $('doneGroup').textContent = '';
       hide('stepBox', 'confirmBox'); show('doneBox');
+      notifyGroup(d, p);   // แจ้งเข้ากลุ่มไลน์ (ไม่ต้องรอ บันทึกเวลาเสร็จแล้ว)
     }
   } catch (e) {
     state.stamped = null;
@@ -575,6 +578,45 @@ async function send(force) {
   $('sendBtn').textContent = 'บันทึกเวลา';
   $('forceBtn').disabled = false;
   $('forceBtn').textContent = 'ลงเวลาเลย';
+}
+
+// ----- แจ้งเข้ากลุ่มไลน์ (เฉพาะตอนเปิดลิงก์จากในกลุ่ม) -----
+// ส่งในชื่อพนักงานเอง ฟรี / ต้องติ๊ก scope chat_message.write ใน LIFF / เปิดจากที่อื่น = ไม่แจ้ง
+async function notifyGroup(d, p) {
+  let ctx = null;
+  try { ctx = liff.getContext(); } catch (e) {}
+  if (!ctx || (ctx.type !== 'group' && ctx.type !== 'room')) {
+    $('doneGroup').textContent = 'ไม่ได้แจ้งเข้ากลุ่ม (เปิดลิงก์จากนอกกลุ่มไลน์)';
+    return;
+  }
+  const isIn = d.type === 'เข้า';
+  const warn = (d.flags || []).filter(f => /^นอกรัศมี|^GPS ไม่ชัด/.test(f));
+  const name = state.me.nickname + (state.me.fullName ? ' · ' + state.me.fullName : '');
+  const txt = (t, o) => Object.assign({ type: 'text', text: String(t), wrap: true, size: 'sm', color: '#555555' }, o || {});
+  const body = [
+    txt(name, { size: 'md', weight: 'bold', color: '#222222' }),
+    txt('📍 ' + d.branch + ' · ห่างร้าน ' + d.distance + ' ม.')
+  ];
+  if (!isIn && p && p.inTime) body.push(txt('⏱ เข้า ' + p.inTime + ' – ออก ' + d.time + ' · ทำงาน ' + fmtDur(p.workMin)));
+  if (warn.length) body.push(txt('⚠️ ' + warn.join(' · '), { color: '#c77800', weight: 'bold' }));
+  if (d.note) body.push(txt('📝 ' + d.note));
+  const head = (isIn ? '✅ เข้างาน ' : '🔴 เลิกงาน ') + d.time + ' น.';
+  const msg = {
+    type: 'flex',
+    altText: state.me.nickname + ' ' + (isIn ? 'เข้างาน ' : 'เลิกงาน ') + d.time + ' · ' + d.branch,
+    contents: {
+      type: 'bubble', size: 'kilo',
+      header: { type: 'box', layout: 'vertical', backgroundColor: isIn ? '#2a9d55' : '#d62828', paddingAll: '12px',
+        contents: [{ type: 'text', text: head, color: '#ffffff', weight: 'bold', size: 'lg' }] },
+      body: { type: 'box', layout: 'vertical', spacing: 'sm', paddingAll: '12px', contents: body }
+    }
+  };
+  try {
+    await liff.sendMessages([msg]);
+    $('doneGroup').textContent = '📤 แจ้งเข้ากลุ่มไลน์แล้ว';
+  } catch (e) {
+    $('doneGroup').textContent = 'แจ้งเข้ากลุ่มไม่สำเร็จ (บันทึกเวลาเรียบร้อยแล้ว ไม่ต้องลงใหม่)';
+  }
 }
 
 function dist(a1, o1, a2, o2) {
