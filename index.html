@@ -138,7 +138,7 @@
 // ===== ค่าระบบ =====
 const LIFF_ID = '2012745769-tDbhTx2R';
 const GAS_URL = 'https://script.google.com/macros/s/AKfycbwI0pvDcEvNOINQqjuMFuqW7DjmueQPfFcn0udlsT3Ay-7bvHKtGhdonPaWtoSixujQpw/exec';
-const PAGE_VERSION = '3.1 (24/11)';   // เลขฉบับของหน้านี้ — แก้หน้าครั้งหน้าให้เปลี่ยนเลขนี้ด้วย
+const PAGE_VERSION = '3.2 (24/11)';   // เลขฉบับของหน้านี้ — แก้หน้าครั้งหน้าให้เปลี่ยนเลขนี้ด้วย
 // ==================
 
 const $ = id => document.getElementById(id);
@@ -146,7 +146,7 @@ let serverVer = '';
 function showVer() { $('ver').textContent = 'หน้า v' + PAGE_VERSION + ' · ระบบ v' + (serverVer || '…'); }
 const show = (...ids) => ids.forEach(i => $(i).classList.remove('hide'));
 const hide = (...ids) => ids.forEach(i => $(i).classList.add('hide'));
-let state = { branches: [], me: {}, type: '', pos: null, live: null, auto: '', manual: false, raw: null, stamped: null, prep: null, sending: false };
+let state = { branches: [], me: {}, type: '', pos: null, live: null, auto: '', manual: false, raw: null, stamped: null, prep: null, prepP: null, sending: false };
 
 // โหลดระบบไลน์แบบไม่บังหน้าจอ (หน้าเว็บขึ้นปุ่มได้ก่อน ไลน์โหลดตามหลัง)
 let liffReady = null;
@@ -275,7 +275,7 @@ $('btnIn').onclick = () => begin('เข้า');
 $('btnOut').onclick = () => begin('ออก');
 
 function begin(type) {
-  state.type = type; state.raw = null; state.stamped = null; state.prep = null; state.pos = null; state.auto = ''; state.manual = false;
+  state.type = type; state.raw = null; state.stamped = null; state.prep = null; state.prepP = null; state.pos = null; state.auto = ''; state.manual = false;
   $('stepTitle').textContent = type === 'เข้า' ? 'ลงเวลาเข้างาน' : 'ลงเวลาออกงาน';
   $('branch').innerHTML = state.branches.map(b => `<option>${esc(b.name)}</option>`).join('');
   $('preview').src = ''; hide('preview', 'mainBox', 'confirmBox');
@@ -377,8 +377,27 @@ $('photo').onchange = async e => {
   $('preview').src = state.raw; show('preview');
   $('photoBtn').textContent = '📷 ถ่ายใหม่';
   e.target.value = '';
+  startPrep();   // ขอเวลาจากระบบไว้เลยตอนถ่ายรูปเสร็จ (ระหว่างพนักงานดูรูป/พิมพ์หมายเหตุ) กดบันทึกจะได้รอแค่รอบเดียว
   check();
 };
+
+// ขอเวลา + ลายเซ็นจากระบบ (เวลาที่บันทึกและประทับบนรูป = เวลาตอนถ่ายรูปเสร็จ ตามนาฬิการะบบ)
+function startPrep() {
+  const type = state.type;
+  state.prep = null;
+  const pr = api('prep', { type }).then(p => { p._at = Date.now(); if (state.prepP === pr) state.prep = p; return p; });
+  pr.catch(() => {});   // ถ้าพลาด ไปขอใหม่ตอนกดบันทึก
+  state.prepP = pr;
+  return pr;
+}
+
+async function getPrep() {
+  let p = null;
+  try { if (state.prepP) p = await state.prepP; } catch (e) { p = null; }
+  // ไม่มี / พลาด / เก่าเกิน 8 นาที (ระบบรับได้ 10 นาที) → ขอใหม่
+  if (!p || Date.now() - p._at > 8 * 60000) p = await startPrep();
+  return p;
+}
 
 function shrink(file, max, q) {
   return new Promise((ok, no) => {
@@ -521,21 +540,18 @@ async function send(force) {
   $('forceBtn').disabled = true;
   $('forceBtn').textContent = 'กำลังบันทึก...';
   try {
-    // ขอเวลาจากระบบ แล้วประทับลงรูป (กด "ลงเวลาเลย" ใช้รูปที่ประทับไว้แล้ว)
-    if (!force || !state.stamped) {
-      const p = await api('prep', { type: state.type });
-      state.prep = p;
-      state.stamped = await stampPhoto(state.raw, {
-        type: state.type, time: p.time, date: p.date, day: p.day,
-        inTime: p.inTime, workMin: p.workMin,
-        nickname: state.me.nickname, fullName: state.me.fullName, code: state.me.code,
-        branch: $('branch').value, dist: curDist()
-      });
-    }
+    // ใช้เวลาที่ขอไว้ตอนถ่ายรูป (ส่วนใหญ่ได้มาแล้ว ไม่ต้องรอ) แล้วประทับลงรูปในมือถือ (เร็ว)
+    const p = await getPrep();
+    state.stamped = await stampPhoto(state.raw, {
+      type: state.type, time: p.time, date: p.date, day: p.day,
+      inTime: p.inTime, workMin: p.workMin,
+      nickname: state.me.nickname, fullName: state.me.fullName, code: state.me.code,
+      branch: $('branch').value, dist: curDist()
+    });
     const d = await api('clock', {
       type: state.type, branch: $('branch').value,
       lat: state.pos.lat, lng: state.pos.lng, accuracy: state.pos.acc,
-      photo: state.stamped, ts: state.prep.ts, sig: state.prep.sig,
+      photo: state.stamped, ts: p.ts, sig: p.sig,
       note: $('note').value.trim(), force
     });
     if (d.needConfirm) {
@@ -552,6 +568,7 @@ async function send(force) {
     }
   } catch (e) {
     state.stamped = null;
+    state.prepP = null; state.prep = null;   // ครั้งหน้าขอเวลาใหม่
     alert(e.message);
   }
   state.sending = false; check();
