@@ -139,7 +139,7 @@
 // ===== ค่าระบบ =====
 const LIFF_ID = '2012745769-tDbhTx2R';
 const GAS_URL = 'https://script.google.com/macros/s/AKfycbwI0pvDcEvNOINQqjuMFuqW7DjmueQPfFcn0udlsT3Ay-7bvHKtGhdonPaWtoSixujQpw/exec';
-const PAGE_VERSION = '3.3 (24/11)';   // เลขฉบับของหน้านี้ — แก้หน้าครั้งหน้าให้เปลี่ยนเลขนี้ด้วย
+const PAGE_VERSION = '3.5 (28/11)';   // เลขฉบับของหน้านี้ — แก้หน้าครั้งหน้าให้เปลี่ยนเลขนี้ด้วย
 // ==================
 
 const $ = id => document.getElementById(id);
@@ -595,6 +595,7 @@ async function notifyGroup(d, p) {
   const txt = (t, o) => Object.assign({ type: 'text', text: String(t), wrap: true, size: 'sm', color: '#555555' }, o || {});
   const body = [
     txt(name, { size: 'md', weight: 'bold', color: '#222222' }),
+    txt('📅 ' + ((p && p.day) ? p.day + ' ' : '') + ((p && p.date) || '')),
     txt('📍 ' + d.branch + ' · ห่างร้าน ' + d.distance + ' ม.')
   ];
   if (!isIn && p && p.inTime) body.push(txt('⏱ เข้า ' + p.inTime + ' – ออก ' + d.time + ' · ทำงาน ' + fmtDur(p.workMin)));
